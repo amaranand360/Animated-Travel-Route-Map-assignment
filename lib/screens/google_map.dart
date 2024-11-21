@@ -1,8 +1,16 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
+
+final List<Color> segmentColors = [
+  Colors.red,
+  Colors.blue,
+  Colors.green,
+  Colors.orange,
+  Colors.purple,
+  Colors.yellow,
+];
 
 class AnimatedRouteMap extends StatefulWidget {
   final List<String> locations;
@@ -21,14 +29,15 @@ class AnimatedRouteMap extends StatefulWidget {
 class _AnimatedRouteMapState extends State<AnimatedRouteMap> {
   late GoogleMapController _controller;
   Set<Marker> markers = {};
+  Set<Polyline> polylines = {};
   List<LatLng> routePoints = [];
-  List<LatLng> animatedRoutePoints = [];
   BitmapDescriptor carIcon = BitmapDescriptor.defaultMarker;
   BitmapDescriptor trainIcon = BitmapDescriptor.defaultMarker;
   BitmapDescriptor planeIcon = BitmapDescriptor.defaultMarker;
 
   Timer? _animationTimer;
   int _currentPointIndex = 0;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -44,31 +53,25 @@ class _AnimatedRouteMapState extends State<AnimatedRouteMap> {
   }
 
   void _loadCustomIcons() async {
-  try {
-    // Load custom icons from the assets folder
-    carIcon = await BitmapDescriptor.asset(
-      const ImageConfiguration(size: Size(48, 48)),  // Optional: Define size for the icon
-      'assets/images/car_icon.png',
-    );
-    trainIcon = await BitmapDescriptor.asset(
-      const ImageConfiguration(size: Size(48, 48)),  // Optional: Define size for the icon
-      'assets/images/train_icon.png',
-    );
-    planeIcon = await BitmapDescriptor.asset(
-      const ImageConfiguration(size: Size(48, 48)),  // Optional: Define size for the icon
-      'assets/images/plane_icon.png',
-    );
-    
-    // Update the state to reload the UI with the loaded icons
-    setState(() {});
-  } catch (e) {
-    // Print the error if assets fail to load
-    print('Error loading icons: $e');
+    try {
+      carIcon = await BitmapDescriptor.asset(
+        const ImageConfiguration(devicePixelRatio: 2.5),
+        'assets/images/car_icon.png',
+      );
+      trainIcon = await BitmapDescriptor.asset(
+        const ImageConfiguration(devicePixelRatio: 2.5),
+        'assets/images/train_icon.png',
+      );
+      planeIcon = await BitmapDescriptor.asset(
+        const ImageConfiguration(devicePixelRatio: 2.5),
+        'assets/images/plane_icon.png',
+      );
+      setState(() {});
+    } catch (e) {
+      print('Error loading icons: $e');
+    }
   }
-}
 
-
-  // Initialize markers and the route
   Future<void> _initializeMarkersAndRoute() async {
     for (int i = 0; i < widget.locations.length; i++) {
       final location = widget.locations[i];
@@ -79,15 +82,17 @@ class _AnimatedRouteMapState extends State<AnimatedRouteMap> {
         final LatLng point = LatLng(locations[0].latitude, locations[0].longitude);
 
         setState(() {
-          // Add marker with transport mode icon
-          markers.add(
-            Marker(
-              markerId: MarkerId(location),
-              position: point,
-              infoWindow: InfoWindow(title: location, snippet: transportMode),
-              icon: _getIconForMode(transportMode),
-            ),
-          );
+          markers.add(Marker(
+            markerId: MarkerId(location),
+            position: point,
+            infoWindow: InfoWindow(title: location, snippet: transportMode),
+            icon: _getIconForMode(transportMode),
+            onTap: () {
+              _controller.animateCamera(
+                CameraUpdate.newLatLngZoom(point, 6),
+              );
+            },
+          ));
           routePoints.add(point);
         });
       } catch (e) {
@@ -95,11 +100,13 @@ class _AnimatedRouteMapState extends State<AnimatedRouteMap> {
       }
     }
 
-    // Start animating the route
     _animateRoute();
+
+    setState(() {
+      _isLoading = false;
+    });
   }
 
-  // Get the icon for the transport mode
   BitmapDescriptor _getIconForMode(String mode) {
     switch (mode) {
       case 'Train':
@@ -111,51 +118,267 @@ class _AnimatedRouteMapState extends State<AnimatedRouteMap> {
     }
   }
 
-  // Animate the route by progressively adding points to the polyline
   void _animateRoute() {
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 400), (timer) {
-      if (_currentPointIndex < routePoints.length) {
+    _animationTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (_currentPointIndex < routePoints.length - 1) {
         setState(() {
-          animatedRoutePoints.add(routePoints[_currentPointIndex]);
-          _currentPointIndex++;
+          String transportMode = widget.transportModes[_currentPointIndex];
+
+          // Create polyline for each segment with different styles
+          final polylineSegment = Polyline(
+            polylineId: PolylineId('segment_$_currentPointIndex'),
+            points: [
+              routePoints[_currentPointIndex],
+              routePoints[_currentPointIndex + 1],
+            ],
+            color: segmentColors[_currentPointIndex % segmentColors.length],
+            width: 4,
+          );
+
+          // Add the polyline to the set
+          polylines.add(polylineSegment);
         });
 
-        // Move the camera to the current point
         _controller.animateCamera(
-          CameraUpdate.newLatLng(animatedRoutePoints.last),
+          CameraUpdate.newLatLng(routePoints[_currentPointIndex]),
         );
+
+        _currentPointIndex++;
       } else {
         timer.cancel();
       }
     });
   }
 
+  List<PatternItem> _getPolylinePatternForMode(String mode) {
+    switch (mode) {
+      case 'Plane':
+        // Curved line for planes
+        return _getCurvedPolylinePattern();
+      case 'Train':
+        // Dashed pattern for trains
+        return [PatternItem.dash(10), PatternItem.gap(10)];
+      default:
+        // Solid line for cars
+        return [];
+    }
+  }
+
+  List<PatternItem> _getCurvedPolylinePattern() {
+    // This method generates a "curved" line by adding multiple intermediate points between the two main points
+    return [
+      PatternItem.dash(20),
+      PatternItem.gap(20),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Animated Travel Route Map')),
-      body: GoogleMap(
-        initialCameraPosition: const CameraPosition(
-          target: LatLng(20.5937, 78.9629), // India center
-          zoom: 5,
-        ),
-        markers: markers,
-        polylines: {
-          Polyline(
-            polylineId: const PolylineId('animatedRoute'),
-            points: animatedRoutePoints,
-            color: Colors.red,
-            width: 4,
-          ),
-        },
-        onMapCreated: (controller) {
-          _controller = controller;
-        },
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : GoogleMap(
+              initialCameraPosition: const CameraPosition(
+                target: LatLng(20.5937, 78.9629),
+                zoom: 5,
+              ),
+              markers: markers,
+              polylines: polylines,
+              onMapCreated: (controller) {
+                _controller = controller;
+              },
+            ),
     );
   }
 }
 
+
+
+
+// import 'dart:async';
+
+// import 'package:flutter/material.dart';
+// import 'package:google_maps_flutter/google_maps_flutter.dart';
+// import 'package:geocoding/geocoding.dart';
+
+// final List<Color> segmentColors = [
+//   Colors.red,
+//   Colors.blue,
+//   Colors.purple,
+//   Colors.deepOrangeAccent,
+//   Colors.grey,
+//   Colors.yellow,
+// ];
+
+// class AnimatedRouteMap extends StatefulWidget {
+//   final List<String> locations;
+//   final List<String> transportModes;
+
+//   const AnimatedRouteMap({
+//     super.key,
+//     required this.locations,
+//     required this.transportModes,
+//   });
+
+//   @override
+//   State<AnimatedRouteMap> createState() => _AnimatedRouteMapState();
+// }
+
+// class _AnimatedRouteMapState extends State<AnimatedRouteMap> {
+//   late GoogleMapController _controller;
+//   Set<Marker> markers = {};
+//   Set<Polyline> polylines = {};
+//   List<LatLng> routePoints = [];
+//   BitmapDescriptor carIcon = BitmapDescriptor.defaultMarker;
+//   BitmapDescriptor trainIcon = BitmapDescriptor.defaultMarker;
+//   BitmapDescriptor planeIcon = BitmapDescriptor.defaultMarker;
+
+//   Timer? _animationTimer;
+//   int _currentPointIndex = 0;
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     _loadCustomIcons();
+//     _initializeMarkersAndRoute();
+//   }
+
+//   @override
+//   void dispose() {
+//     _animationTimer?.cancel();
+//     super.dispose();
+//   }
+
+//   /// Load custom icons for markers
+//   void _loadCustomIcons() async {
+//     print('Attempting to load custom icons...');
+//     try {
+//       carIcon = await BitmapDescriptor.asset(
+//         const ImageConfiguration(devicePixelRatio: 2.5),
+//         'assets/images/car_icon.png',
+//       );
+//       trainIcon = await BitmapDescriptor.asset(
+//         const ImageConfiguration(devicePixelRatio: 2.5),
+//         'assets/images/train_icon.png',
+//       );
+//       planeIcon = await BitmapDescriptor.asset(
+//         const ImageConfiguration(devicePixelRatio: 2.5),
+//         'assets/images/plane_icon.png',
+//       );
+
+//       setState(() {});
+//     } catch (e) {
+//       print('Error loading icons: $e');
+//     }
+//   }
+
+//   /// Initialize markers and route points from the given locations
+//   Future<void> _initializeMarkersAndRoute() async {
+//     print('Initializing markers and route...');
+//     for (int i = 0; i < widget.locations.length; i++) {
+//       final location = widget.locations[i];
+//       final transportMode = widget.transportModes[i];
+
+//       try {
+//         final List<Location> locations = await locationFromAddress(location);
+//         final LatLng point = LatLng(locations[0].latitude, locations[0].longitude);
+
+//         setState(() {
+//           // Add marker with transport mode icon
+//           markers.add(
+//             Marker(
+//               markerId: MarkerId(location),
+//               position: point,
+//               infoWindow: InfoWindow(title: location, snippet: transportMode),
+//               icon: _getIconForMode(transportMode),
+//               onTap: () {
+//                 _controller.animateCamera(
+//                   CameraUpdate.newLatLngZoom(point, 6),
+//                 );
+//               },
+//             ),
+            
+//           );
+//           routePoints.add(point);
+//         });
+//       } catch (e) {
+//         print('Error finding location for $location: $e');
+//       }
+//     }
+
+//     // Start animating the route
+//     _animateRoute();
+//   }
+
+//   /// Get the icon for the transport mode
+//   BitmapDescriptor _getIconForMode(String mode) {
+//     switch (mode) {
+//       case 'Train':
+//         return trainIcon;
+//       case 'Plane':
+//         return planeIcon;
+//       default:
+//         return carIcon;
+//     }
+//   }
+
+//   /// Animate the route by progressively adding segments as polylines
+//   void _animateRoute() {
+//     print('Starting route animation...');
+//     _animationTimer = Timer.periodic(const Duration(milliseconds: 400), (timer) {
+//       if (_currentPointIndex < routePoints.length - 1) {
+//         setState(() {
+//           // Create a polyline segment for the current route
+//           final polylineSegment = Polyline(
+//             polylineId: PolylineId('segment_${_currentPointIndex}'),
+//             points: [
+//               routePoints[_currentPointIndex],
+//               routePoints[_currentPointIndex + 1],
+//             ],
+//             color: segmentColors[_currentPointIndex % segmentColors.length],
+//             width: 4,
+//           );
+
+//           // Add the polyline segment to the polylines set
+//           polylines.add(polylineSegment);
+//         });
+
+//         // Move the camera to the current point
+//         _controller.animateCamera(
+//           CameraUpdate.newLatLng(routePoints[_currentPointIndex]),
+//         );
+
+//         print(
+//             'Added segment ${_currentPointIndex}: ${routePoints[_currentPointIndex]} -> ${routePoints[_currentPointIndex + 1]}');
+
+//         _currentPointIndex++;
+//       } else {
+//         // Stop the timer when the animation is complete
+//         print('Route animation completed.');
+//         timer.cancel();
+//       }
+//     });
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(title: const Text('Animated Travel Route Map')),
+//       body: GoogleMap(
+//         initialCameraPosition: const CameraPosition(
+//           target: LatLng(28.7041, 77.1025), // India center
+//           zoom: 5,
+//         ),
+//         markers: markers,
+//         polylines: polylines, // Use the dynamic polyline set
+//         onMapCreated: (controller) {
+//           _controller = controller;
+//         },
+//       ),
+//     );
+//   }
+// }
 
 
 

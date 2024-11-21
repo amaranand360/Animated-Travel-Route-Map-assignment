@@ -5,6 +5,8 @@ import 'package:travel_app/screens/input_screen.dart';
 import 'package:travel_app/screens/user_profile.dart';
 
 class BottomNavigationScreen extends StatefulWidget {
+  const BottomNavigationScreen({super.key});
+
   @override
   State<BottomNavigationScreen> createState() => _BottomNavigationScreenState();
 }
@@ -14,9 +16,9 @@ class _BottomNavigationScreenState extends State<BottomNavigationScreen> {
 
   final List<Widget> _pages = [
     HomePage(),
-    InputScreen(), 
-    AnalyticsPage(),
-    ProfilePage(),
+    const InputScreen(), 
+    const AnalyticsPage(),
+    const ProfilePage(),
   ];
 
   void _onTabTapped(int index) {
@@ -26,7 +28,7 @@ class _BottomNavigationScreenState extends State<BottomNavigationScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => Center(child: CircularProgressIndicator()),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     Future.delayed(const Duration(seconds: 1), () {
@@ -55,20 +57,20 @@ class _BottomNavigationScreenState extends State<BottomNavigationScreen> {
           unselectedItemColor: Colors.grey,
           backgroundColor: Colors.purple.shade50,
           type: BottomNavigationBarType.fixed,
-          items: [
-            const BottomNavigationBarItem(
+          items: const [
+            BottomNavigationBarItem(
               icon: Icon(Icons.home),
               label: 'Home',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.route),
+              icon: Icon(Icons.explore),
               label: 'Plan a Tour',
             ),
-            const BottomNavigationBarItem(
+            BottomNavigationBarItem(
               icon: Icon(Icons.analytics),
               label: 'Analytics',
             ),
-            const BottomNavigationBarItem(
+            BottomNavigationBarItem(
               icon: Icon(Icons.person),
               label: 'Profile',
             ),
