@@ -39,15 +39,15 @@ Before you begin, ensure you have the following installed:
 
 ```bash
   cd travel_app
-
+```
 3. Install the necessary dependencies:
 
 ```bash
   flutter pub get
-
+```
 4. Run the app on your device (Android or iOS):
 
 ```bash
   flutter run
-
+```
   
